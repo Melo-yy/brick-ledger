@@ -75,19 +75,22 @@ def _baidu_ocr(image_path: str) -> list[dict]:
 
 
 def _merge_line_blocks(blocks: list[dict]) -> list[dict]:
-    """Merge adjacent blocks on the same line (handles Baidu character-level output)."""
+    """
+    Merge blocks on the same line using anchored Y tolerance.
+    Compares against the FIRST block in each line to avoid chain-merging.
+    """
     if not blocks:
         return blocks
     lines = []
     current_line = [blocks[0]]
+    anchor_y = blocks[0]["y_center"]
     for b in blocks[1:]:
-        prev_y = current_line[-1]["y_center"]
-        curr_y = b["y_center"]
-        if abs(curr_y - prev_y) <= 15:
+        if abs(b["y_center"] - anchor_y) <= 12:
             current_line.append(b)
         else:
             lines.append(current_line)
             current_line = [b]
+            anchor_y = b["y_center"]
     lines.append(current_line)
     merged = []
     for line in lines:
