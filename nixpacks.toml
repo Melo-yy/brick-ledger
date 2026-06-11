@@ -2,4 +2,4 @@
 MISE_PYTHON_GITHUB_ATTESTATIONS = "false"
 
 [phases.install]
-cmds = ["apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-sim-extra libgl1-mesa-glx libglib2.0-0"]
+cmds = ["apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0"]
