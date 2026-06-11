@@ -125,8 +125,10 @@ def _split_ocr_text(text: str) -> list[str]:
     text = re.sub(r'(延长收货)', r'\n\1', text)
     text = re.sub(r'(客服)', r'\n\1', text)
 
-    # Also split before price patterns if preceded by non-price text
-    text = re.sub(r'(?<=[^¥￥\d\s])[¥￥]', r'\n¥', text)  # ¥ as line start
+    # Split before ¥ when preceded by non-digit (e.g. "跑￥355")
+    text = re.sub(r'(?<=[^¥￥\d\s])[¥￥]', r'\n¥', text)
+    # Split before ¥ when preceded by digit (e.g. "42￥1058" → "42\n￥1058")
+    text = re.sub(r'(?<=\d)[¥￥]', r'\n¥', text)
 
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     return lines if lines else [text]
@@ -224,18 +226,23 @@ def _find_expense(texts):
                         return v
                 except ValueError:
                     pass
-            if i > 0:
-                m = re.search(r"[¥￥半]\s*(\d+\.?\d*)", texts[i - 1])
+            # Check NEXT line first (actual payment is after 实付款, not before)
+            if i + 1 < len(texts):
+                m = re.search(r"[¥￥半]?\s*(\d+\.?\d*)", texts[i + 1])
                 if m:
                     try:
                         return float(m.group(1))
                     except ValueError:
                         pass
-            if i + 1 < len(texts):
-                m = re.search(r"[¥￥半]\s*(\d+\.?\d*)", texts[i + 1])
+            # Then check previous line (for cases like "¥355\n实付款")
+            if i > 0:
+                m = re.search(r"[¥￥半]\s*(\d+\.?\d*)", texts[i - 1])
                 if m:
                     try:
-                        return float(m.group(1))
+                        v = float(m.group(1))
+                        # Skip very small values (< 10) which are likely discounts
+                        if v >= 10:
+                            return v
                     except ValueError:
                         pass
 
@@ -260,7 +267,7 @@ def _find_expense(texts):
                 continue
             try:
                 v = float(m.group(1))
-                if 1 <= v <= 99999:
+                if 10 <= v <= 99999:  # ≥10 to filter out tiny discounts
                     valid.append(v)
             except ValueError:
                 pass
