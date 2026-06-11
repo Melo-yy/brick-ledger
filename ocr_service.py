@@ -26,11 +26,6 @@ def _get_reader():
     return _reader
 
 
-# Preload OCR models at import time so first request doesn't timeout
-os.makedirs(_MODEL_DIR, exist_ok=True)
-_get_reader()
-
-
 def _imread_unicode(path: str) -> np.ndarray:
     with open(path, "rb") as f:
         buf = f.read()
