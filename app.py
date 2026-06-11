@@ -21,6 +21,7 @@ app.secret_key = config.JWT_SECRET
 CORS(app)
 
 os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+db.init_db()
 
 # ── JWT helpers ────────────────────────────────────────────────────────────
 
@@ -325,7 +326,6 @@ def static_files(path):
 # ── Entry ──────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    db.init_db()
     print(f"\n  🧱 搬砖记账系统启动")
     print(f"  ───────────────────────────────")
     print(f"  本地访问:  http://127.0.0.1:{config.PORT}")
