@@ -356,20 +356,10 @@ def _find_model(texts):
         t = t.strip()
         if len(t) < 6:
             continue
-        # ── ABSOLUTE REJECT: price lines (¥ start) never product titles ──
+        # ABSOLUTE: skip lines starting with ¥ (price/description, never product title)
         if re.match(r'^[¥￥半]', t):
             continue
-        # ── ABSOLUTE REJECT: pure metadata ──
-        if re.match(r'^(已签收|待取件|运输中|预计|纺织路|联系|分享|申请|客服|更多|查看|'
-                    r'确认|延长|退货|正品|补贴后|店铺|平台|支付优惠|合计|已购)\b', t):
-            continue
-        # ── ABSOLUTE REJECT: brand-only lines (LI-NING, 361°) ──
-        if len(t) < 12 and re.match(r'^[A-Za-z0-9°\-]+$', t):
-            continue
-        # ── ABSOLUTE REJECT: section headers ending with > or brand> ──
-        if re.search(r'品牌[>\|」》\]]\s*$', t) and len(t) < 12:
-            continue
-
+        # Skip pure garbage
         if re.match(r"^[\d\s.,¥￥%#\-—/\\()（）\[\]:：+×Xx*'\"'半]+$", t):
             continue
         if re.match(
@@ -416,10 +406,10 @@ def _find_model(texts):
             score -= 15
         if re.search(r'(商品下架|下架)', t):
             score -= 20
-        # Only penalize if the line is mostly metadata, not a product line
-        if re.search(r'(补贴价|先用后付|支付方式|快递单号|物流公司|复制$)', t):
+        if re.search(r'(补贴价|先用后付|支付方式|快递单号|物流公司)', t):
             score -= 30
-        if re.match(r'^百亿', t) and len(t) < 15:
+        # "品牌>" at end = section header, not product
+        if re.search(r'品牌[>\|」》]', t) and chinese_chars < 4:
             score -= 30
         if '|' in t:
             score -= 12
