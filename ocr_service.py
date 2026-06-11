@@ -45,9 +45,13 @@ def _baidu_ocr(image_path: str) -> list[dict]:
         img_b64 = base64.b64encode(f.read()).decode()
 
     token = _baidu_get_token()
-    url = f"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token={token}"
+    # accurate endpoint: best recognition + line-level results with location
+    url = f"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate?access_token={token}"
 
-    data = urllib.parse.urlencode({"image": img_b64}).encode()
+    data = urllib.parse.urlencode({
+        "image": img_b64,
+        "recognize_granularity": "big",
+    }).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
 
     with urllib.request.urlopen(req, timeout=30) as resp:
