@@ -270,15 +270,29 @@ const AddOrderPage = {
         async function runBrowserOCR(file) {
             ocrLoading.value = true; ocrError.value = '';
             try {
-                // Use Tesseract.js in the browser — no server-side processing
-                const { data: { text, lines } } = await Tesseract.recognize(
-                    file,
-                    'chi_sim+eng',
-                    { logger: m => {} }
-                );
+                // Preprocess: resize for speed (~1200px wide) via Canvas
+                const img = await createImageBitmap(file);
+                const canvas = document.createElement('canvas');
+                const maxW = 1200;
+                const scale = Math.min(1, maxW / img.width);
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const preprocessed = canvas.toDataURL('image/jpeg', 0.9);
+
+                // Tesseract.js with PSM 4 (single column of text) — best for screenshots
+                const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+                    logger: m => {},
+                });
+                await worker.setParameters({
+                    tessedit_pageseg_mode: '4',
+                });
+                const { data: { text, lines } } = await worker.recognize(preprocessed);
+                await worker.terminate();
+
                 const texts = (lines || []).map(l => l.text).filter(Boolean);
                 if (!texts.length && text) {
-                    // Fallback: split raw text by newline
                     texts.push(...text.split('\n').filter(Boolean));
                 }
                 ocrTexts.value = texts;
