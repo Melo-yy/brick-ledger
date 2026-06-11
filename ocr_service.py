@@ -45,37 +45,25 @@ def _baidu_ocr(image_path: str) -> list[dict]:
         img_b64 = base64.b64encode(f.read()).decode()
 
     token = _baidu_get_token()
-    # accurate endpoint: best recognition + line-level results with location
-    url = f"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate?access_token={token}"
+    url = f"https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token={token}"
 
-    data = urllib.parse.urlencode({
-        "image": img_b64,
-        "recognize_granularity": "big",
-    }).encode()
+    data = urllib.parse.urlencode({"image": img_b64}).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
 
     with urllib.request.urlopen(req, timeout=30) as resp:
         result = json.loads(resp.read())
 
-    blocks = []
-    for item in result.get("words_result", []):
-        text = item.get("words", "").strip()
-        if not text:
-            continue
-        loc = item.get("location", {})
-        y_center = (loc.get("top", 0) + loc.get("height", 0) / 2) if loc else 0
-        blocks.append({
-            "text": text,
-            "confidence": 1.0,
-            "bbox": [
-                [loc.get("left", 0), loc.get("top", 0)],
-                [loc.get("left", 0) + loc.get("width", 0), loc.get("top", 0) + loc.get("height", 0)],
-            ] if loc else [],
-            "y_center": y_center,
-        })
+    # Collect all text into one string, then split into pseudo-lines
+    all_text = "".join(
+        item.get("words", "") for item in result.get("words_result", [])
+    )
 
-    blocks.sort(key=lambda b: b["y_center"])
-    return _merge_line_blocks(blocks)
+    # Split on common separator chars found in order screenshots
+    lines = _split_ocr_text(all_text)
+
+    blocks = [{"text": t, "confidence": 1.0, "bbox": [], "y_center": i * 100}
+              for i, t in enumerate(lines) if t.strip()]
+    return blocks
 
 
 def _merge_line_blocks(blocks: list[dict]) -> list[dict]:
@@ -107,6 +95,41 @@ def _merge_line_blocks(blocks: list[dict]) -> list[dict]:
             "y_center": line[0]["y_center"],
         })
     return merged
+
+
+def _split_ocr_text(text: str) -> list[str]:
+    """
+    Split a single OCR text blob into pseudo-lines using order screenshot patterns.
+    Baidu accurate_basic often returns all text as one block; this reconstructs lines.
+    """
+    if not text:
+        return []
+    # Insert newlines before common section starts
+    text = re.sub(r'(?<=[^\s])>', '>\n', text)           # ">" as section separator
+    text = re.sub(r'(?<=[^\s])x1', '\nx1', text)          # "x1" quantity
+    text = re.sub(r'(?<=[^\s])×1', '\n×1', text)          # "×1" quantity (fullwidth)
+    text = re.sub(r'(发货时间)', r'\n\1', text)            # time labels
+    text = re.sub(r'(付款时间)', r'\n\1', text)
+    text = re.sub(r'(创建时间)', r'\n\1', text)
+    text = re.sub(r'(下单时间)', r'\n\1', text)
+    text = re.sub(r'(支付宝交易号)', r'\n\1', text)
+    text = re.sub(r'(天猫积分)', r'\n\1', text)
+    text = re.sub(r'(申请售后)', r'\n\1', text)
+    text = re.sub(r'(商品总价)', r'\n\1', text)
+    text = re.sub(r'(店铺优惠)', r'\n\1', text)
+    text = re.sub(r'(平台优惠)', r'\n\1', text)
+    text = re.sub(r'(支付优惠)', r'\n\1', text)
+    text = re.sub(r'(实付款)', r'\n\1', text)
+    text = re.sub(r'(查看物流)', r'\n\1', text)
+    text = re.sub(r'(确认收货)', r'\n\1', text)
+    text = re.sub(r'(延长收货)', r'\n\1', text)
+    text = re.sub(r'(客服)', r'\n\1', text)
+
+    # Also split before price patterns if preceded by non-price text
+    text = re.sub(r'(?<=[^¥￥\d\s])[¥￥]', r'\n¥', text)  # ¥ as line start
+
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    return lines if lines else [text]
 
 
 # ── EasyOCR (local fallback) ──────────────────────────────────────────────
