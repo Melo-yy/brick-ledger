@@ -124,6 +124,23 @@ def _split_ocr_text(text: str) -> list[str]:
     text = re.sub(r'(确认收货)', r'\n\1', text)
     text = re.sub(r'(延长收货)', r'\n\1', text)
     text = re.sub(r'(客服)', r'\n\1', text)
+    # PDD-specific separators
+    text = re.sub(r'(支付方式[：:])', r'\n\1', text)
+    text = re.sub(r'(物流公司[：:])', r'\n\1', text)
+    text = re.sub(r'(快递单号[：:])', r'\n\1', text)
+    text = re.sub(r'(订单编号[：:])', r'\n\1', text)
+    text = re.sub(r'(拼单时间)', r'\n\1', text)
+    text = re.sub(r'(拼单已同步)', r'\n\1', text)
+    text = re.sub(r'(商品快照[：:]?)', r'\n\1', text)
+    text = re.sub(r'(已购规格)', r'\n\1', text)
+    text = re.sub(r'(已购数量)', r'\n\1', text)
+    text = re.sub(r'(合计补贴价)', r'\n\1', text)
+    text = re.sub(r'(补贴后共优惠)', r'\n\1', text)
+    # Split at "先用后付" separator line
+    text = re.sub(r'(先用后付)', r'\n\1', text)
+    text = re.sub(r'(退货包运费)', r'\n\1', text)
+    # Split "百亿小贴" / "百亿补贴" from product text
+    text = re.sub(r'(百亿小贴|百亿补贴)', r'\n\1', text)
 
     # Split before ¥ when preceded by non-digit (e.g. "跑￥355")
     text = re.sub(r'(?<=[^¥￥\d\s])[¥￥]', r'\n¥', text)
@@ -350,7 +367,11 @@ def _find_model(texts):
             r"商品总价|店铺优惠|平台优惠|支付优惠|红包|"
             r"假一赔|极速退款|无理由|申请售后|"
             r"确认收货|延长收货|查看物流|"
-            r"获得.*积分|支付宝交易号|更多型号).*$", t):
+            r"获得.*积分|支付宝交易号|更多型号|"
+            r"支付方式|物流公司|快递单号|"
+            r"退货包运费|正品险|分享商品|联系|再次拼单|"
+            r"补贴后共优惠|合计补贴价|已购规格|已购数量|"
+            r"百亿小贴|百亿补贴|拼团|团价|立享低价).*$", t):
             continue
 
         chinese_chars = len(re.findall(r'[一-鿿]', t))
@@ -381,6 +402,8 @@ def _find_model(texts):
             score -= 15
         if re.search(r'(商品下架|下架)', t):
             score -= 20
+        if re.search(r'(百亿|补贴价|先用后付|支付方式|快递单号|物流公司|复制$)', t):
+            score -= 30
         if '|' in t:
             score -= 12
 
