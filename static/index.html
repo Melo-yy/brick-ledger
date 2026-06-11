@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5">
+    <title>搬砖记账</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="app">
+        <toast-container></toast-container>
+
+        <!-- Nav (hidden on login page) -->
+        <nav class="nav" v-if="isLoggedIn()">
+            <div class="nav-brand"><i class="fas fa-cubes"></i> 搬砖记账</div>
+            <div class="nav-links">
+                <a href="#/orders" :class="{ active: currentPage === 'orders' }">
+                    <i class="fas fa-list"></i> 订单列表
+                </a>
+                <a href="#/add" :class="{ active: currentPage === 'add' }">
+                    <i class="fas fa-plus-circle"></i> 新增订单
+                </a>
+            </div>
+            <div class="nav-right">
+                <span class="nav-user"><i class="fas fa-user"></i> {{ authUser?.username }}</span>
+                <button class="btn btn-ghost btn-sm" @click="logout"><i class="fas fa-sign-out-alt"></i> 退出</button>
+            </div>
+        </nav>
+
+        <main class="main">
+            <login-page v-if="currentPage === 'login'"></login-page>
+            <order-list-page v-else-if="currentPage === 'orders'"></order-list-page>
+            <add-order-page v-else-if="currentPage === 'add'"></add-order-page>
+        </main>
+    </div>
+
+    <!-- ── Templates ─────────────────────────────────────────────── -->
+
+    <!-- Login / Register -->
+    <script type="text/x-template" id="login-template">
+        <div class="login-wrap">
+            <div class="login-card">
+                <div class="login-logo"><i class="fas fa-cubes"></i> 搬砖记账</div>
+                <p class="login-desc">{{ isRegister ? '注册新账号' : '登录你的账号' }}</p>
+
+                <div v-if="error" class="alert alert-warning" style="margin-bottom:12px;">
+                    <i class="fas fa-exclamation-circle"></i> {{ error }}
+                </div>
+
+                <form @submit.prevent="submit" class="login-form">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input v-model="form.username" placeholder="输入用户名" autocomplete="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input v-model="form.password" type="password" placeholder="输入密码" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary login-btn" :disabled="loading">
+                        <i v-if="loading" class="fas fa-spinner spinner"></i>
+                        {{ isRegister ? '注册' : '登录' }}
+                    </button>
+                </form>
+
+                <p class="login-switch">
+                    {{ isRegister ? '已有账号？' : '没有账号？' }}
+                    <a href="#" @click.prevent="isRegister = !isRegister; error = ''">
+                        {{ isRegister ? '去登录' : '注册一个' }}
+                    </a>
+                </p>
+            </div>
+        </div>
+    </script>
+
+    <!-- Order List -->
+    <script type="text/x-template" id="orders-template">
+        <div>
+            <div class="page-title"><i class="fas fa-list"></i> 订单列表</div>
+
+            <!-- Stats bar -->
+            <div class="stats-bar" v-if="stats">
+                <div class="stat-mini">
+                    <span class="stat-mini-label">总支出</span>
+                    <span class="stat-mini-value text-red">{{ fmtMoney(stats.total_expense) }}</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-mini-label">总利润</span>
+                    <span class="stat-mini-value" :class="stats.total_profit >= 0 ? 'text-green' : 'text-red'">{{ fmtProfit(stats.total_profit) }}</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-mini-label">在售</span>
+                    <span class="stat-mini-value text-blue">{{ stats.selling_count || 0 }}</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-mini-label">已售</span>
+                    <span class="stat-mini-value text-green">{{ stats.sold_count || 0 }}</span>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filter-bar">
+                <div class="tabs">
+                    <button class="tab" :class="{ active: statusFilter === '' }" @click="statusFilter = ''">全部</button>
+                    <button class="tab" :class="{ active: statusFilter === 'selling' }" @click="statusFilter = 'selling'">在售</button>
+                    <button class="tab" :class="{ active: statusFilter === 'sold' }" @click="statusFilter = 'sold'">已售</button>
+                </div>
+                <select v-model="platformFilter">
+                    <option value="">全部平台</option>
+                    <option value="淘宝">淘宝</option>
+                    <option value="拼多多">拼多多</option>
+                    <option value="京东">京东</option>
+                    <option value="得物">得物</option>
+                </select>
+                <input v-model="keyword" placeholder="搜索型号/码数..." @keyup.enter="onSearch">
+                <button class="btn btn-primary btn-sm" @click="onSearch"><i class="fas fa-search"></i> 搜索</button>
+                <span class="text-muted" style="font-size:.82rem;margin-left:auto;">共 {{ total }} 条</span>
+            </div>
+
+            <!-- Table -->
+            <div class="card" style="padding:0;">
+                <div v-if="loading" class="loading"><i class="fas fa-spinner spinner"></i> 加载中...</div>
+                <div v-else class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:44px;"></th>
+                                <th>型号</th><th>码数</th><th>平台</th>
+                                <th>支出</th><th>到手</th><th>利润</th>
+                                <th>状态</th><th>日期</th>
+                                <th style="width:80px;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="o in orders" :key="o.id">
+                                <td>
+                                    <img v-if="o.image_file" :src="'/uploads/' + o.image_file" class="thumb" @click="previewImage(o.image_file)" title="点击预览">
+                                    <div v-else class="thumb" style="background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#ccc;">无图</div>
+                                </td>
+                                <td><strong>{{ o.model || '-' }}</strong></td>
+                                <td>{{ o.size || '-' }}</td>
+                                <td>{{ platformLabel(o.platform) }}</td>
+                                <td>{{ fmtMoney(o.expense) }}</td>
+                                <td>{{ fmtMoney(o.received) }}</td>
+                                <td :class="o.profit && o.profit >= 0 ? 'text-green' : 'text-red'">{{ fmtProfit(o.profit) }}</td>
+                                <td><span :class="'badge badge-' + o.status">{{ fmtStatus(o.status) }}</span></td>
+                                <td>{{ fmtDate(o.order_date) }}</td>
+                                <td>
+                                    <button class="btn-icon" @click="openEdit(o)" title="编辑"><i class="fas fa-edit"></i></button>
+                                    <button class="btn-icon danger" @click="confirmDelete(o)" title="删除"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                            <tr v-if="!orders.length">
+                                <td colspan="10" class="text-muted" style="text-align:center;padding:30px;">暂无订单数据</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div v-if="totalPages > 1" class="pagination">
+                <button :disabled="page <= 1" @click="goPage(page - 1)"><i class="fas fa-chevron-left"></i></button>
+                <template v-for="p in totalPages" :key="p">
+                    <button v-if="Math.abs(p - page) <= 2 || p === 1 || p === totalPages" :class="{ active: p === page }" @click="goPage(p)">{{ p }}</button>
+                    <span v-else-if="p === page - 3 || p === page + 3">…</span>
+                </template>
+                <button :disabled="page >= totalPages" @click="goPage(page + 1)"><i class="fas fa-chevron-right"></i></button>
+            </div>
+
+            <!-- Edit Modal -->
+            <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+                <div class="modal">
+                    <h2><span><i class="fas fa-edit"></i> 编辑订单 #{{ editingOrder?.id }}</span>
+                        <button class="modal-close" @click="showEditModal = false">&times;</button></h2>
+                    <img v-if="editingOrder?.image_file" :src="'/uploads/' + editingOrder.image_file" class="img-preview-lg">
+                    <div class="form-grid">
+                        <div class="form-group"><label>型号</label><input v-model="editForm.model"></div>
+                        <div class="form-group"><label>码数</label><input v-model="editForm.size"></div>
+                        <div class="form-group">
+                            <label>平台</label>
+                            <select v-model="editForm.platform">
+                                <option value="">选择平台</option>
+                                <option value="淘宝">淘宝</option><option value="拼多多">拼多多</option>
+                                <option value="京东">京东</option><option value="得物">得物</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>进货日期</label><input type="date" v-model="editForm.order_date"></div>
+                        <div class="form-group"><label>支出</label><input type="number" step="0.01" v-model="editForm.expense"></div>
+                        <div class="form-group"><label>到手金额</label><input type="number" step="0.01" v-model="editForm.received" placeholder="卖出后填写"></div>
+                        <div class="form-group"><label>卖出日期</label><input type="date" v-model="editForm.sell_date"></div>
+                        <div class="form-group"><label>手续费</label><input type="number" step="0.01" v-model="editForm.fee"></div>
+                        <div class="form-group">
+                            <label>状态</label>
+                            <select v-model="editForm.status">
+                                <option value="selling">在售</option><option value="sold">已售</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>利润预览</label>
+                            <div :class="editProfit !== null ? (editProfit >= 0 ? 'text-green' : 'text-red') : ''" style="font-size:1.2rem;font-weight:700;padding:8px 0;">
+                                {{ editProfit !== null ? fmtProfit(editProfit) : '填写到手后自动计算' }}
+                            </div>
+                        </div>
+                        <div class="form-group full"><label>备注</label><textarea v-model="editForm.note"></textarea></div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-ghost" @click="showEditModal = false">取消</button>
+                        <button class="btn btn-primary" @click="saveEdit"><i class="fas fa-save"></i> 保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete Confirm -->
+            <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = null">
+                <div class="modal" style="max-width:400px;">
+                    <h2><span><i class="fas fa-exclamation-triangle text-red"></i> 确认删除</span></h2>
+                    <p style="margin-bottom:16px;color:#666;">确定要删除 <strong>{{ showDeleteConfirm.model || '此订单' }}</strong> 吗？</p>
+                    <div class="form-actions">
+                        <button class="btn btn-ghost" @click="showDeleteConfirm = null">取消</button>
+                        <button class="btn btn-danger" @click="doDelete"><i class="fas fa-trash"></i> 删除</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Image Preview -->
+            <div v-if="showImagePreview" class="modal-overlay" @click.self="showImagePreview = null">
+                <div class="modal" style="max-width:800px;text-align:center;">
+                    <button class="modal-close" style="float:right;" @click="showImagePreview = null">&times;</button>
+                    <img :src="'/uploads/' + showImagePreview" style="max-width:100%;max-height:70vh;border-radius:8px;">
+                </div>
+            </div>
+        </div>
+    </script>
+
+    <!-- Add Order -->
+    <script type="text/x-template" id="addorder-template">
+        <div>
+            <div class="page-title"><i class="fas fa-plus-circle"></i> 新增订单</div>
+            <div class="card">
+                <div class="form-grid">
+                    <div class="upload-zone" :class="{ 'has-image': imagePreview, 'dragover': dragOver }"
+                         @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
+                        <input type="file" accept="image/*" @change="onFileSelect">
+                        <template v-if="!imagePreview">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>点击或拖拽上传订单截图</p>
+                            <p style="font-size:.75rem;color:#ccc;">JPG/PNG/WebP</p>
+                        </template>
+                        <template v-else>
+                            <img :src="imagePreview" class="upload-preview">
+                            <p style="margin-top:4px;"><i class="fas fa-check-circle text-green"></i> 已上传</p>
+                        </template>
+                    </div>
+
+                    <!-- OCR status -->
+                    <div class="ocr-result" v-if="ocrLoading"><i class="fas fa-spinner spinner"></i> OCR 识别中...</div>
+                    <div class="ocr-result" v-else-if="ocrError"><i class="fas fa-exclamation-circle text-red"></i> OCR 失败: {{ ocrError }}</div>
+                    <div class="ocr-result" v-else-if="ocrDone">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                            <i class="fas fa-check-circle text-green"></i> <strong>OCR 完成</strong>
+                            <span class="text-muted" style="font-size:.78rem;">{{ ocrTexts.length }} 行</span>
+                        </div>
+                        <div style="font-size:.82rem;display:flex;flex-wrap:wrap;gap:4px 16px;margin-bottom:6px;">
+                            <span v-if="ocrFields.model" style="color:#4a6cf7;">✓ 型号</span>
+                            <span v-if="ocrFields.size" style="color:#4a6cf7;">✓ 码数</span>
+                            <span v-if="ocrFields.expense" style="color:#4a6cf7;">✓ 支出</span>
+                            <span v-if="ocrFields.order_date" style="color:#4a6cf7;">✓ 日期</span>
+                            <span v-if="ocrFields.platform" style="color:#4a6cf7;">✓ 平台</span>
+                        </div>
+                        <details v-if="ocrTexts.length" style="font-size:.78rem;color:#999;">
+                            <summary style="cursor:pointer;color:#666;">查看识别文本</summary>
+                            <div style="margin-top:4px;padding:6px;background:#f5f5f5;border-radius:4px;max-height:150px;overflow-y:auto;">
+                                <div v-for="(t, i) in ocrTexts" :key="i" style="padding:1px 0;">{{ i+1 }}. {{ t }}</div>
+                            </div>
+                        </details>
+                    </div>
+
+                    <div class="form-group"><label>型号</label><input v-model="form.model" placeholder="商品型号/名称"></div>
+                    <div class="form-group"><label>码数</label><input v-model="form.size" placeholder="尺码/规格"></div>
+                    <div class="form-group">
+                        <label>平台</label>
+                        <select v-model="form.platform">
+                            <option value="">选择平台</option>
+                            <option value="淘宝">淘宝</option><option value="拼多多">拼多多</option>
+                            <option value="京东">京东</option><option value="得物">得物</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>进货日期</label><input type="date" v-model="form.order_date"></div>
+                    <div class="form-group"><label>支出 (¥)</label><input type="number" step="0.01" v-model="form.expense" placeholder="进货价"></div>
+                    <div class="form-group"><label>备注</label><input v-model="form.note" placeholder="可选"></div>
+
+                    <div class="form-actions">
+                        <button class="btn btn-ghost" @click="resetForm"><i class="fas fa-undo"></i> 重置</button>
+                        <button class="btn btn-primary" @click="submit" :disabled="submitting || !imageFile">
+                            <i v-if="submitting" class="fas fa-spinner spinner"></i>
+                            <i v-else class="fas fa-save"></i> {{ submitting ? '保存中...' : '保存订单' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </script>
+
+    <script src="/app.js"></script>
+</body>
+</html>
