@@ -82,14 +82,6 @@ def index():
     return send_from_directory("static", "index.html")
 
 
-@app.route("/<path:path>")
-def static_files(path):
-    full = os.path.join("static", path)
-    if os.path.isfile(full) and not path.startswith("api/"):
-        return send_from_directory("static", path)
-    return send_from_directory("static", "index.html")
-
-
 # ── Auth ───────────────────────────────────────────────────────────────────
 
 @app.route("/api/auth/register", methods=["POST"])
@@ -318,6 +310,16 @@ def export_csv():
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):
     return send_from_directory(config.UPLOAD_FOLDER, filename)
+
+
+# ── SPA fallback (MUST be last — catches all non-API, non-file routes) ──────
+
+@app.route("/<path:path>")
+def static_files(path):
+    full = os.path.join("static", path)
+    if os.path.isfile(full):
+        return send_from_directory("static", path)
+    return send_from_directory("static", "index.html")
 
 
 # ── Entry ──────────────────────────────────────────────────────────────────
