@@ -129,6 +129,8 @@ def _split_ocr_text(text: str) -> list[str]:
     text = re.sub(r'(?<=[^¥￥\d\s])[¥￥]', r'\n¥', text)
     # Split before ¥ when preceded by digit (e.g. "42￥1058" → "42\n￥1058")
     text = re.sub(r'(?<=\d)[¥￥]', r'\n¥', text)
+    # Split at uppercase brand names (e.g. "...回复NIKE..." → "...回复\nNIKE...")
+    text = re.sub(r'(?<=[一-鿿])([A-Z]{2,})', r'\n\1', text)
 
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     return lines if lines else [text]
@@ -378,7 +380,7 @@ def _find_model(texts):
         if re.search(r'(倒计时|已签收|自动确认|还剩.*天|直播[中]?)', t):
             score -= 15
         if re.search(r'(商品下架|下架)', t):
-            score -= 10
+            score -= 20
         if '|' in t:
             score -= 12
 
