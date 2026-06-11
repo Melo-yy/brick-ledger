@@ -264,13 +264,31 @@ const AddOrderPage = {
             reader.onload = e => { imagePreview.value = e.target.result; };
             reader.readAsDataURL(file);
             ocrDone.value = false; ocrError.value = ''; ocrTexts.value = []; ocrFields.value = {};
-            runBrowserOCR(file);
+            // Try server OCR (Baidu API) first, fall back to browser Tesseract.js
+            runServerOCR(file);
+        }
+
+        async function runServerOCR(file) {
+            ocrLoading.value = true; ocrError.value = '';
+            try {
+                const fd = new FormData();
+                fd.append('image', file);
+                const result = await API.post('/api/ocr', fd);
+                const fields = result.fields || {};
+                ocrTexts.value = result.raw_texts || [];
+                ocrFields.value = fields;
+                ocrDone.value = true;
+                applyFields(fields);
+                addToast('OCR 识别完成', 'success');
+            } catch (e) {
+                // Server OCR failed, try browser Tesseract.js as fallback
+                console.warn('Server OCR failed, trying browser OCR:', e.message);
+                runBrowserOCR(file);
+            } finally { ocrLoading.value = false; }
         }
 
         async function runBrowserOCR(file) {
-            ocrLoading.value = true; ocrError.value = '';
             try {
-                // Preprocess: resize for speed (~1200px wide) via Canvas
                 const img = await createImageBitmap(file);
                 const canvas = document.createElement('canvas');
                 const maxW = 1200;
@@ -281,41 +299,39 @@ const AddOrderPage = {
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                 const preprocessed = canvas.toDataURL('image/jpeg', 0.9);
 
-                // Tesseract.js with PSM 4 (single column of text) — best for screenshots
                 const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
                     logger: m => {},
                 });
-                await worker.setParameters({
-                    tessedit_pageseg_mode: '4',
-                });
+                await worker.setParameters({ tessedit_pageseg_mode: '4' });
                 const { data: { text, lines } } = await worker.recognize(preprocessed);
                 await worker.terminate();
 
                 const texts = (lines || []).map(l => l.text).filter(Boolean);
-                if (!texts.length && text) {
-                    texts.push(...text.split('\n').filter(Boolean));
-                }
+                if (!texts.length && text) texts.push(...text.split('\n').filter(Boolean));
                 ocrTexts.value = texts;
 
-                // Send text to server for field parsing (lightweight)
+                // Use server's text parser (lightweight, same regex as Baidu)
                 const result = await api('/api/parse-text', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ texts }),
                 });
-                const fields = result.fields || {};
-                ocrFields.value = fields;
+                ocrFields.value = result.fields || {};
                 ocrDone.value = true;
-                if (fields.model) form.model = fields.model;
-                if (fields.size) form.size = fields.size;
-                if (fields.platform) form.platform = fields.platform;
-                if (fields.expense) form.expense = fields.expense;
-                if (fields.order_date) form.order_date = fields.order_date;
-                addToast('OCR 识别完成', 'success');
+                applyFields(result.fields || {});
+                addToast('OCR 识别完成(浏览器模式)', 'success');
             } catch (e) {
-                ocrError.value = e.message;
-                addToast('OCR 失败: ' + e.message, 'error');
-            } finally { ocrLoading.value = false; }
+                ocrError.value = '识别失败，请手动输入';
+                addToast('OCR 识别失败', 'error');
+            }
+        }
+
+        function applyFields(fields) {
+            if (fields.model) form.model = fields.model;
+            if (fields.size) form.size = fields.size;
+            if (fields.platform) form.platform = fields.platform;
+            if (fields.expense) form.expense = fields.expense;
+            if (fields.order_date) form.order_date = fields.order_date;
         }
 
         async function submit() {

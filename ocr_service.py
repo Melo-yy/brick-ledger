@@ -71,7 +71,35 @@ def _baidu_ocr(image_path: str) -> list[dict]:
         })
 
     blocks.sort(key=lambda b: b["y_center"])
-    return blocks
+    return _merge_line_blocks(blocks)
+
+
+def _merge_line_blocks(blocks: list[dict]) -> list[dict]:
+    """Merge adjacent blocks on the same line (handles Baidu character-level output)."""
+    if not blocks:
+        return blocks
+    lines = []
+    current_line = [blocks[0]]
+    for b in blocks[1:]:
+        prev_y = current_line[-1]["y_center"]
+        curr_y = b["y_center"]
+        if abs(curr_y - prev_y) <= 15:
+            current_line.append(b)
+        else:
+            lines.append(current_line)
+            current_line = [b]
+    lines.append(current_line)
+    merged = []
+    for line in lines:
+        line.sort(key=lambda b: b["bbox"][0][0] if b.get("bbox") else 0)
+        text = "".join(b["text"] for b in line)
+        merged.append({
+            "text": text,
+            "confidence": sum(b["confidence"] for b in line) / len(line),
+            "bbox": line[0]["bbox"] if line[0].get("bbox") else [],
+            "y_center": line[0]["y_center"],
+        })
+    return merged
 
 
 # ── EasyOCR (local fallback) ──────────────────────────────────────────────
