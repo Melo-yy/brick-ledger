@@ -1,4 +1,5 @@
 """OCR service based on EasyOCR for Chinese text extraction from order screenshots."""
+import os
 import re
 import numpy as np
 import cv2
@@ -6,12 +7,28 @@ import easyocr
 
 _reader = None
 
+# Store models on persistent volume so they survive restarts
+_MODEL_DIR = os.environ.get(
+    "EASYOCR_MODEL_DIR",
+    os.path.join(os.environ.get("DATA_DIR", os.path.expanduser("~")), ".EasyOCR"),
+)
+
 
 def _get_reader():
     global _reader
     if _reader is None:
-        _reader = easyocr.Reader(["ch_sim", "en"], gpu=False)
+        _reader = easyocr.Reader(
+            ["ch_sim", "en"],
+            gpu=False,
+            model_storage_directory=_MODEL_DIR,
+            download_enabled=True,
+        )
     return _reader
+
+
+# Preload OCR models at import time so first request doesn't timeout
+os.makedirs(_MODEL_DIR, exist_ok=True)
+_get_reader()
 
 
 def _imread_unicode(path: str) -> np.ndarray:
