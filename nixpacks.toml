@@ -1,2 +1,5 @@
 [phases.install]
 cmds = ["apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0"]
+
+[variables]
+MISE_PYTHON_GITHUB_ATTESTATIONS = "false"
