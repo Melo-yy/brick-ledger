@@ -264,18 +264,33 @@ const AddOrderPage = {
             reader.onload = e => { imagePreview.value = e.target.result; };
             reader.readAsDataURL(file);
             ocrDone.value = false; ocrError.value = ''; ocrTexts.value = []; ocrFields.value = {};
-            runOCR(file);
+            runBrowserOCR(file);
         }
 
-        async function runOCR(file) {
+        async function runBrowserOCR(file) {
             ocrLoading.value = true; ocrError.value = '';
             try {
-                const fd = new FormData();
-                fd.append('image', file);
-                const result = await API.post('/api/ocr', fd);
-                const fields = result.fields;
-                ocrTexts.value = result.raw_texts || [];
-                ocrFields.value = fields || {};
+                // Use Tesseract.js in the browser — no server-side processing
+                const { data: { text, lines } } = await Tesseract.recognize(
+                    file,
+                    'chi_sim+eng',
+                    { logger: m => {} }
+                );
+                const texts = (lines || []).map(l => l.text).filter(Boolean);
+                if (!texts.length && text) {
+                    // Fallback: split raw text by newline
+                    texts.push(...text.split('\n').filter(Boolean));
+                }
+                ocrTexts.value = texts;
+
+                // Send text to server for field parsing (lightweight)
+                const result = await api('/api/parse-text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ texts }),
+                });
+                const fields = result.fields || {};
+                ocrFields.value = fields;
                 ocrDone.value = true;
                 if (fields.model) form.model = fields.model;
                 if (fields.size) form.size = fields.size;

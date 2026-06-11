@@ -254,6 +254,30 @@ def ocr_upload():
             os.remove(temp_path)
 
 
+# ── Text parsing (lightweight — used by browser-based OCR) ─────────────────
+
+@app.route("/api/parse-text", methods=["POST"])
+def parse_text():
+    """
+    Accept raw OCR text lines from browser (Tesseract.js), return parsed fields.
+    Body: {"texts": ["line1", "line2", ...]}
+    """
+    data = request.get_json(silent=True)
+    if not data or "texts" not in data:
+        return _json_err("请提供识别文本", 400)
+    texts = data["texts"]
+    if not isinstance(texts, list) or not texts:
+        return _json_err("文本列表为空", 400)
+    try:
+        from ocr_service import parse_fields
+        # Build mock blocks (parse_fields only uses text field)
+        blocks = [{"text": t} for t in texts]
+        fields = parse_fields(blocks)
+        return _json_ok({"fields": fields, "raw_texts": texts})
+    except Exception as e:
+        return _json_err(f"解析失败: {str(e)}", 500)
+
+
 # ── Statistics ─────────────────────────────────────────────────────────────
 
 @app.route("/api/stats/overview")
